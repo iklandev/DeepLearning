@@ -324,7 +324,7 @@ for i in array_neurons:
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
-''' 
+
     
 #Config 3
 use_free_parking_var = 1; 
@@ -334,8 +334,8 @@ for i in array_neurons:
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
-
-'''     
+''' 
+    
 #Config 4
 use_free_parking_var = 1; 
 include_time = 1;
@@ -344,9 +344,10 @@ for i in array_neurons:
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
-'''  
+
 print ("----END----");
 #read_and_process_csv(csv_file_name); 
 #get_data(csv_file_name);
 #train_lstm();
 #evaluate_model();
+
