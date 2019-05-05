@@ -7,6 +7,7 @@ from pandas import concat
 from sklearn.metrics import mean_squared_error
 import numpy as np
 import pandas as pd
+import logging
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.preprocessing import MinMaxScaler
 from numpy import array
@@ -17,6 +18,7 @@ PROCESS_COLUMNS = ['Date', 'TimeID','DayType', 'FreeParking','TotalJamINRadius_1
 REINDEX_COLUMNS = ['FreeParking', 'DayType', 'TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
 
 
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO, filename='app.log');
 #Number of memory units in first LSTM layer
 neorons = 1; 
 
@@ -34,16 +36,15 @@ nr_time_ids = 15;
     
 # fix random seed for reproducibility
 np.random.seed(7)
-use_scaler = 0;
 
 #config
-csv_file_name = "DataCSV/8_8353.csv";
+csv_file_name = "DataCSV/5_G17.csv";
 model_name = "Seattle_LSTM";
 optimizer = "adam";
 loss = "mse";
 metrics = ['mae'];
 epochs = 50;
-batch_size = 1;
+batch_size = 7;
 percentage_training = 0.7;
 model_root_folder = "NeuralNetworks/";
 
@@ -105,6 +106,10 @@ def read_and_process_csv (name):
     #dataset.to_csv("raw.csv", sep=';');
     return dataset;
  
+def set_len_to_be_devide_with_batch_size(len, batch_size_t):
+    while len % batch_size_t != 0:
+        len -= 1
+    return len; 
 #Prepare the data for LSTM networks
 def get_data (name):
       
@@ -123,17 +128,9 @@ def get_data (name):
     tem = np.array(values, copy=True);
     tem = tem[:, 0]
 
-    
-    reframed = None;
-    if use_scaler == 1:
-        # normalize features
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaled = scaler.fit_transform(values)
-        reframed = series_to_supervised(scaled, nr_time_ids, nr_time_ids)
-    else: 
-        reframed = series_to_supervised(values, nr_time_ids, nr_time_ids)
+    reframed = series_to_supervised(values, nr_time_ids, nr_time_ids)
 
-    #reframed.to_csv("origin.csv", sep=';');
+    reframed.to_csv("origin.csv", sep=';');
     values = reframed.values
     
     #delete free parking from entry variable
@@ -146,6 +143,7 @@ def get_data (name):
         
     # split into train and test sets
     n_train_hours = int(values.shape[0]*percentage_training);
+    n_train_hours = set_len_to_be_devide_with_batch_size(n_train_hours, batch_size);
     train = values[:n_train_hours, :]
     test = values[n_train_hours:, :]
      
@@ -168,6 +166,10 @@ def get_data (name):
     #Separate on half and use the first half for validating 
     #each epoch, and second half for validating network
     val_len = test_X.shape[0]//2;
+    
+    #set val len to be divadible with  batch size
+    val_len = set_len_to_be_devide_with_batch_size(val_len, batch_size)
+    
         
     val_X = test_X[:val_len,:];
     test_X = test_X[val_len:, :];
@@ -176,15 +178,7 @@ def get_data (name):
     test_y = test_y[val_len:, :];
     
     #np.savetxt("train_X.csv", train_X, delimiter=";");
-    #np.savetxt("train_y.csv", train_y, delimiter=";");
-    #np.savetxt("val_X.csv", val_X, delimiter=";");
-    #np.savetxt("val_y.csv", val_y, delimiter=";");
-    #np.savetxt("test_X.csv", test_X, delimiter=";");
-    #np.savetxt("test_y.csv", test_y, delimiter=";");
  
-    if use_scaler == 1:
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaled = scaler.fit_transform(tem.reshape(-1,1));
     # reshape input to be 3D [samples, timesteps, features]
     train_X = train_X.reshape((train_X.shape[0], nr_time_ids, features_temp))
     test_X = test_X.reshape((test_X.shape[0], nr_time_ids, features_temp))
@@ -229,48 +223,31 @@ def forecast_lstm(model, X, n_batch):
         features_temp = features_temp-1;    
     
     # reshape input pattern to [samples, timesteps, features]
-    X = X.reshape(1, nr_time_ids, features_temp)
+    X = X.reshape((n_batch, nr_time_ids, features_temp))
     # make forecast
     forecast = model.predict(X, batch_size=n_batch)
     # convert to array
     return [x for x in forecast[0, :]]
  
-def inverse_transform(forecasts, scaler):
-
-    inverted = list()
-    for i in range(len(forecasts)):
-        # create array from forecast
-        forecast = array(forecasts[i])
-        forecast = forecast.reshape(1, len(forecast))
-        # invert scaling
-        inv_scale = scaler.inverse_transform(forecast)
-        inv_scale = inv_scale[0, :]
-        # store
-        inverted.append(inv_scale)
-    return inverted
-
 def evaluate_model():
     
     _, _, test_X, test_y, scaler, _, _ = get_data(csv_file_name);
     model = load_model(model_name);
     
+        
     forecasts = list()
     for i in range(len(test_X)):
         # make forecast
-        forecast = forecast_lstm(model, test_X[i], batch_size)
-        # store the forecast
-        forecasts.append(forecast);
-
-    
-    if use_scaler == 1:
-        forecasts = inverse_transform(forecasts, scaler);
-        test_y = inverse_transform(test_y, scaler);
+        if(i+6<len(test_X)):
+            forecast = forecast_lstm(model, np.concatenate((test_X[i], test_X[i+1], test_X[i+2], test_X[i+3], test_X[i+4], test_X[i+5], test_X[i+6])) , batch_size)
+            # store the forecast
+            forecasts.append(forecast);
    
     file_basic_name = "{0}{1}_{2}".format(use_free_parking_var, include_time, neorons);
     #np.savetxt("p{0}.csv".format(file_basic_name), forecasts, delimiter=";");
-    #np.savetxt("t{0}.csv".format(file_basic_name), test_y, delimiter=";");
+
     eval = list()
-    for i in range(len(test_y)):
+    for i in range(len(forecasts)):
         actual = test_y[i]
         predicted = forecasts[i]
         rmse = sqrt(mean_squared_error(actual, predicted))
@@ -290,28 +267,26 @@ def train_lstm():
     # design network
     model = Sequential()
     model.add(LSTM(neorons, batch_input_shape=(batch_size, train_X.shape[1], train_X.shape[2]), stateful=True))
+    model.add(Dense(50))
     model.add(Dense(train_y.shape[1]))
     model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
     model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, verbose=1, shuffle=False, validation_data=(val_X, val_y))
-     
-    # fit network
-    #for i in range(epochs):
-    #    print ("LSTM epoch: "+str(i+1)+"/"+str(epochs));
-    #    model.fit(train_X, train_y, epochs=1, batch_size=batch_size, verbose=1, shuffle=False, validation_data=(val_X, val_y))
-    #    model.reset_states()
-
+        
     save_model(model, model_name);
+    logging.info('Training the model has finished');
     print("Training the model has finished");
 
     
 print ("----START----");
+logging.info('Start');
 array_neurons = [15, 20, 24, 30, 38, 45, 52, 60, 68, 75];
 
 # Config 1
-use_free_parking_var = 0; 
+use_free_parking_var = 1; 
 include_time = 0;
 for i in array_neurons:
     neorons = i;
+    logging.info("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
@@ -319,9 +294,10 @@ for i in array_neurons:
    
 #Config 2
 use_free_parking_var = 0; 
-include_time = 1;
+include_time = 0;
 for i in array_neurons:
     neorons = i;
+    logging.info("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
@@ -332,6 +308,7 @@ use_free_parking_var = 1;
 include_time = 0;
 for i in array_neurons:
     neorons = i;
+    logging.info("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
@@ -341,10 +318,12 @@ use_free_parking_var = 1;
 include_time = 1;
 for i in array_neurons:
     neorons = i;
+    logging.info("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     print("{0}{1}: {2}".format(use_free_parking_var, include_time, neorons));
     train_lstm();
     evaluate_model();
 
+logging.info('End');
 print ("----END----");
 
 

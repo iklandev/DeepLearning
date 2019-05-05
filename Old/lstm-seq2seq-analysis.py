@@ -292,13 +292,11 @@ def train_lstm():
     model.add(LSTM(neorons, batch_input_shape=(batch_size, train_X.shape[1], train_X.shape[2]), stateful=True))
     model.add(Dense(train_y.shape[1]))
     model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
-    model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, verbose=1, shuffle=False, validation_data=(val_X, val_y))
-     
     # fit network
-    #for i in range(epochs):
-    #    print ("LSTM epoch: "+str(i+1)+"/"+str(epochs));
-    #    model.fit(train_X, train_y, epochs=1, batch_size=batch_size, verbose=1, shuffle=False, validation_data=(val_X, val_y))
-    #    model.reset_states()
+    for i in range(epochs):
+        print ("LSTM epoch: "+str(i+1)+"/"+str(epochs));
+        model.fit(train_X, train_y, epochs=1, batch_size=batch_size, verbose=1, shuffle=False, validation_data=(val_X, val_y))
+        model.reset_states()
 
     save_model(model, model_name);
     print("Training the model has finished");
