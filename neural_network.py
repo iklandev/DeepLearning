@@ -15,8 +15,7 @@ loss = 'mse';
 metrics=['mae'];
 model_root_folder = "NeuralNetworks/";
 percentage_training = 0.8;
-epochs = 1;
-save_actual_and_forecast_data = 1;
+save_actual_and_forecast_data = 0;
 
 PROCESS_COLUMNS = ['Date', 'TimeID','DayType', 'FreeParking','TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
 REINDEX_COLUMNS = ['FreeParking', 'DayType', 'TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
@@ -213,13 +212,30 @@ def train_and_evaluate(array_neurons, file_name, nr_time_ids, day_types, use_fre
 
     
 #Global config   
+epochs = 100;
 csv_file_name = "DataCSV/5_G17.csv"; 
 nr_time_ids = 15;
 day_types = 1;
 include_day_type=0;
-array_neurons = [10, 20];
+array_neurons = [10, 20, 25, 30, 35, 40, 48, 56, 65, 70, 75, 80, 90, 102];
 #Config_1
 use_free_parking = 0; 
 include_time = 0;
+train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
 
+#Config_2
+use_free_parking = 0; 
+include_time = 1;
+train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+
+
+#Config_3
+use_free_parking = 1; 
+include_time = 0;
+train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+
+
+#Config_4
+use_free_parking = 1; 
+include_time = 1;
 train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
