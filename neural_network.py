@@ -1,6 +1,5 @@
 import logging
 import pandas as pd
-from datetime import datetime, timedelta
 import numpy as np
 from keras.models import Sequential, model_from_json
 from keras.layers import Dense
@@ -9,44 +8,21 @@ from sklearn.metrics import mean_squared_error
 from statistics import mean
 
 #Global config
-activation_function = 'sigmoid';
+activation_function = 'relu';
 optimizer = 'adam';
 loss = 'mse';
 metrics=['mae'];
 model_root_folder = "NeuralNetworks/";
-percentage_training = 0.8;
-save_actual_and_forecast_data = 0;
+processed_root_folder = "Processed/";
+save_actual_and_forecast_data = 1;
+epochs = 100;
+csv_file_name = "5_G17"; 
 
-PROCESS_COLUMNS = ['Date', 'TimeID','DayType', 'FreeParking','TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
-REINDEX_COLUMNS = ['FreeParking', 'DayType', 'TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
-ENTRY_PARAM_COLUMNS = ['TotalJamINRadius_1','TotalJamOUTRadius_1','TotalJamINRadius_2','TotalJamOUTRadius_2','TotalJamINRadius_3','TotalJamOUTRadius_3'];
+
+ALL_FILES = ['1_12', '1_14', '1_25', '1_26', '1_27', '1_28', '1_2', '1_30', '1_33', '1_35', '1_36', '1_37', '1_38', '1_39', '1_40', '1_41', '1_42', '1_4', '1_5', '2_1', '2_2', '2_3', '2_5', '2_6', '2_9', '3_BI', '3_CI', '3_RA', '3_WA', '4_AN7', '4_FI10', '4_FI2', '4_FO1', '4_FO4', '4_FO5', '4_LI6', '4_LI8', '4_MA3', '4_SO9', '5_G11', '5_G14', '5_G16', '5_G17', '5_G3', '5_G4', '5_G7', '5_G9', '6_0', '6_10', '6_11', '6_12', '6_13', '6_14', '6_1', '6_2', '6_3', '6_5', '6_7', '6_8', '6_9', '7_10', '7_12', '7_1', '7_2', '7_3', '7_7', '7_8', '7_9', '8_667276', '8_6767', '8_764978', '8_765178', '8_765283', '8_765383', '8_765678', '8_76', '8_8068', '8_8349', '8_8350', '8_8351', '8_8352', '8_8353', '8_8354', '8_8355', '8_8356', '8_8357'];
+
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO, filename='neural_network.log');
-
-def parse(x):
-    return datetime.strptime(x, '%d/%m/%Y %H:%M')
-
-def convert_time(X):
-    return float("{0:.2f}".format(X.hour+get_minute_decimal_value(X.minute))); 
-
-def get_minute_decimal_value (Y):
-    if Y==0: return 0.00;
-    if Y==4: return 0.07;
-    if Y==8: return 0.13;
-    if Y==12: return 0.20;
-    if Y==16: return 0.27;
-    if Y==20: return 0.33;
-    if Y==24: return 0.40;
-    if Y==28: return 0.47;
-    if Y==32: return 0.54;
-    if Y==36: return 0.60;    
-    if Y==40: return 0.67;
-    if Y==44: return 0.73;
-    if Y==48: return 0.80;
-    if Y==52: return 0.87;
-    if Y==56: return 0.93;
-    
-    return 0;
 
 def save_model (model, name):
     
@@ -77,68 +53,17 @@ def load_model (name):
 #use_free_parking - use free parking spaces as entry in network
 #include_time - use time as entry in network
 #include_day_type - use day type as entry in network
-def read_and_process_csv (name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type=0):
+def read_csv (name, use_free_parking, include_time, percentage_training):
     
+    in_file = "{0}{1}_in_{2}{3}.csv".format(processed_root_folder, name, use_free_parking, include_time);
+    out_file = "{0}{1}_out.csv".format(processed_root_folder, name);   
     
-    logging.info('read_and_process_csv=>name: {0}; nr_time_ids: {1}; day_types: {2}; use_free_parking: {3}; include_time: {4};'
-                 .format(name, nr_time_ids, day_types, use_free_parking, include_time));
-    
-    input_data = list();
-    output_data = list();
-    
-    optional_entry_columns = [];
-    if use_free_parking == 1:
-        optional_entry_columns.append('FreeParking'); 
-    
-    # Read the data from CSV file 
-    dataset = pd.read_csv(name, sep=';', usecols=PROCESS_COLUMNS, parse_dates = [['Date', 'TimeID']], index_col=0, date_parser=parse);
-    dataset.index.name = 'date'
-    dataset = dataset.reindex(columns = REINDEX_COLUMNS);
-    
-    
-    if day_types == 1:
-        #Get only Mon to Fri
-        dataset = dataset.loc[dataset['DayType'].isin([1, 2, 3, 4, 5])];
-    else:
-        #Get only Sat and Sun
-        dataset = dataset.loc[dataset['DayType'].isin([6,7])];
-    
-    #Remove day type from entry params
-    if include_day_type == 0:
-        dataset = dataset.drop(['DayType'], axis=1);
-    else:
-        optional_entry_columns.append('DayType');
-        
-    all_entry_data = optional_entry_columns + ENTRY_PARAM_COLUMNS;
-
-    for index, _ in dataset.iterrows():
-        forward_date = index.to_datetime();
-        back_date = index.to_datetime() - timedelta(minutes=4*nr_time_ids);
-        
-        in_data = list();
-        out_data = list();
-        
-        if(include_time):
-            in_data.append(convert_time(index));
-        
-        for _ in range(nr_time_ids): 
-            if (forward_date in dataset.index) and (back_date in dataset.index):
-                
-                out_data.append(dataset.loc[forward_date, 'FreeParking']);
-                in_data += dataset.loc[back_date, all_entry_data].values.tolist();
-                
-                forward_date+=timedelta(minutes=4);
-                back_date+=timedelta(minutes=4);
-                
-            else: break;
-        else: # only executed if the inner loop did NOT break
-            input_data.append(in_data);
-            output_data.append(out_data);
-            continue;  
-    
-    train_X = np.asarray(input_data);
-    train_Y = np.asarray(output_data);     
-        
+    input_data = pd.read_csv(in_file, sep=';', index_col=False, header=None); 
+    output_data = pd.read_csv(out_file, sep=';', index_col=False, header=None); 
+              
+    train_X = input_data.values;
+    train_Y = output_data.values;     
+         
     n_train_data = int(train_X.shape[0]*percentage_training);
     
     test_X = train_X[n_train_data:, :];
@@ -146,12 +71,10 @@ def read_and_process_csv (name, nr_time_ids, day_types, use_free_parking, includ
     
     test_Y = train_Y[n_train_data:, :];
     train_Y = train_Y[:n_train_data, :];  
-        
-    logging.info('read_and_process_csv: finish');    
+                
     return train_X, train_Y, test_X, test_Y; 
 
 def train (neurons, X_train, Y_train, output_dim):
-    
     
     logging.info('train=>neurons: {0};'.format(neurons));
     input_dim = len(X_train[0]);
@@ -162,7 +85,7 @@ def train (neurons, X_train, Y_train, output_dim):
     # Adding the input layer and the first hidden layer
     model.add(Dense(neurons, input_dim=input_dim, activation= activation_function))
     model.add(Dense(neurons//4, activation=activation_function))
-    model.add(Dense(output_dim, activation=activation_function))
+    model.add(Dense(output_dim, activation='sigmoid'))
 
     # Compile model
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
@@ -171,7 +94,7 @@ def train (neurons, X_train, Y_train, output_dim):
     logging.info('train=>finish');    
     return model;
 
-def evaluate_model (model, X_test, Y_test, model_name):
+def evaluate_model (model, X_test, Y_test, model_name, garage):
     
     eval = list();
     arr2 = [];
@@ -186,23 +109,26 @@ def evaluate_model (model, X_test, Y_test, model_name):
         eval.append(rmse);
     
     if save_actual_and_forecast_data == 1:
-        np.savetxt("{0}_detail_{1}.csv".format(csv_file_name.replace('DataCSV/', '').replace('Garages//', '').replace('.csv', ''), model_name), np.array(arr2), delimiter=";", fmt='%s');  
+        np.savetxt("{0}_detail_{1}.csv".format(garage.replace('DataCSV/', '').replace('Garages//', '').replace('.csv', ''), model_name), np.array(arr2), delimiter=";", fmt='%s');  
     
     return mean(eval);
     
     
 
-def train_and_evaluate(array_neurons, file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type):
+def train_and_evaluate(array_neurons, file_name, nr_time_ids, use_free_parking, include_time, percentage_training):
     
     logging.info('train_and_evaluate=>start');
-    train_X, train_Y, test_X, test_Y = read_and_process_csv(csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+    train_X, train_Y, test_X, test_Y = read_csv(csv_file_name, use_free_parking, include_time, percentage_training);
+    
+    np.savetxt("test_X.csv", test_X, delimiter=";");
+    np.savetxt("test_Y.csv", test_Y, delimiter=";");
     
     for neurons in array_neurons:
         logging.info('train_and_evaluate=>neurons: {0};'.format(neurons));
         model_name = "{0}{1}_{2}".format(use_free_parking, include_time, neurons);
         model = train(neurons, train_X, train_Y, nr_time_ids);
         save_model(model, model_name);
-        mean_error = evaluate_model(model, test_X, test_Y, model_name);
+        mean_error = evaluate_model(model, test_X, test_Y, model_name, csv_file_name);
         f = open('evaluates.csv','a')  # w : writing mode  /  r : reading mode  /  a  :  appending mode
         f.write('{0};{1}\n'.format(model_name, mean_error));
         f.close();
@@ -210,32 +136,76 @@ def train_and_evaluate(array_neurons, file_name, nr_time_ids, day_types, use_fre
     logging.info('train_and_evaluate=>finish');
     return;
 
+
+def train_networks():    
+
+    percentage_training = 0.8;
+    nr_time_ids = 15;
+    array_neurons = [25];
+    ''' 
+    #Config_1
+    use_free_parking = 0; 
+    include_time = 0;
+    train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, use_free_parking, include_time, percentage_training);
+
+    #Config_2
+    use_free_parking = 0; 
+    include_time = 1;
+    train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, use_free_parking, include_time, percentage_training);
+
+    #Config_3
+    use_free_parking = 1; 
+    include_time = 0;
+    train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, use_free_parking, include_time, percentage_training);'''
+
+    #Config_4
+    use_free_parking = 1; 
+    include_time = 1;
+    train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, use_free_parking, include_time, percentage_training);
     
-#Global config   
-epochs = 100;
-csv_file_name = "DataCSV/5_G17.csv"; 
-nr_time_ids = 15;
-day_types = 1;
-include_day_type=0;
-array_neurons = [10, 20, 25, 30, 35, 40, 48, 56, 65, 70, 75, 80, 90, 102];
-#Config_1
-use_free_parking = 0; 
-include_time = 0;
-train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+    return;
 
-#Config_2
-use_free_parking = 0; 
-include_time = 1;
-train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+def evaluate(garage, use_free_parking, include_time):
+    
+    logging.info("Evaluate garage: {0} for {1}{2}".format(garage, use_free_parking, include_time));
+    
+    percentage_training = 0.0;
+    _, _, test_X, test_Y = read_csv(garage, use_free_parking, include_time, percentage_training);
+    
+    
+    model_name = "{0}{1}".format(use_free_parking, include_time);
+    model = load_model(model_name);
+    
+    mean_error = evaluate_model(model, test_X, test_Y, model_name, garage);
+    f = open('evaluates_all.csv','a')  # w : writing mode  /  r : reading mode  /  a  :  appending mode
+    f.write('{0}_{1};{2}\n'.format(garage, model_name, mean_error));
+    f.close();
 
+    return;
 
-#Config_3
-use_free_parking = 1; 
-include_time = 0;
-train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+def evaluate_networks(): 
+    for garage in ALL_FILES:
+        
+        print(garage);
+        
+        use_free_parking = 0; 
+        include_time = 0;
+        evaluate(garage, use_free_parking, include_time);
+        
+        use_free_parking = 0; 
+        include_time = 1;
+        evaluate(garage, use_free_parking, include_time);
+        
+        use_free_parking = 1; 
+        include_time = 0;
+        evaluate(garage, use_free_parking, include_time);
+        
+        use_free_parking = 1; 
+        include_time = 1;
+        evaluate(garage, use_free_parking, include_time);
+        
+       
+    return;
 
-
-#Config_4
-use_free_parking = 1; 
-include_time = 1;
-train_and_evaluate(array_neurons, csv_file_name, nr_time_ids, day_types, use_free_parking, include_time, include_day_type);
+train_networks();
+#evaluate_networks();
